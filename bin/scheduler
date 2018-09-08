@@ -1,0 +1,55 @@
+#!/bin/bash
+
+# CONTROLLING STARTUP:
+#
+# This script relies on a few environment variables to determine startup
+# behavior, those variables are:
+#
+#   QTZ_PATH_CONF -- Path to config directory
+#   QTZ_JAVA_OPTS -- External Java Opts on top of the defaults set
+#
+# Optionally, exact memory values can be set using the `QTZ_JAVA_OPTS`. Note that
+# the Xms and Xmx lines in the JVM options file must be commented out. Example
+# values are "512m", and "10g".
+#
+#   QTZ_JAVA_OPTS="-Xms8g -Xmx8g" ./bin/scheduler
+
+source "`dirname "$0"`"/scheduler-env
+
+QTZ_JVM_OPTIONS="$QTZ_PATH_CONF"/jvm.options
+JVM_OPTIONS=`"$JAVA" -cp "$QTZ_CLASSPATH" org.elasticsearch.tools.launchers.JvmOptionsParser "$QTZ_JVM_OPTIONS"`
+
+cd "$QTZ_HOME"
+# manual parsing to find out, if process should be detached
+if ! echo $* | grep -E '(^-d |-d$| -d |--daemonize$|--daemonize )' > /dev/null; then
+  exec \
+    "$JAVA" \
+    $QTZ_JAVA_OPTS \
+    -Dscheduler.path.home="$QTZ_HOME" \
+    -Dscheduler.path.conf="$QTZ_PATH_CONF" \
+    -cp "$QTZ_CLASSPATH" \
+    com.glaf.scheduler.SchedulerBootstrap \
+    "$@"
+else
+  exec \
+    "$JAVA" \
+    $QTZ_JAVA_OPTS \
+    -Dscheduler.path.home="$QTZ_HOME" \
+    -Dscheduler.path.conf="$QTZ_PATH_CONF" \
+    -cp "$QTZ_CLASSPATH" \
+    com.glaf.scheduler.SchedulerBootstrap \
+    "$@" \
+    <&- &
+  retval=$?
+  pid=$!
+  [ $retval -eq 0 ] || exit $retval
+  if [ ! -z "$QTZ_STARTUP_SLEEP_TIME" ]; then
+    sleep $QTZ_STARTUP_SLEEP_TIME
+  fi
+  if ! ps -p $pid > /dev/null ; then
+    exit 1
+  fi
+  exit 0
+fi
+
+exit $?

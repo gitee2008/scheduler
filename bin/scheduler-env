@@ -1,0 +1,78 @@
+#!/bin/bash
+
+set -e -o pipefail
+
+CDPATH=""
+
+SCRIPT="$0"
+
+# SCRIPT might be an arbitrarily deep series of symbolic links; loop until we
+# have the concrete path
+while [ -h "$SCRIPT" ] ; do
+  ls=`ls -ld "$SCRIPT"`
+  # Drop everything prior to ->
+  link=`expr "$ls" : '.*-> \(.*\)$'`
+  if expr "$link" : '/.*' > /dev/null; then
+    SCRIPT="$link"
+  else
+    SCRIPT=`dirname "$SCRIPT"`/"$link"
+  fi
+done
+
+# determine Netty home; to do this, we strip from the path until we find
+# bin, and then strip bin (there is an assumption here that there is no nested
+# directory under bin also named bin)
+QTZ_HOME=`dirname "$SCRIPT"`
+
+# now make QTZ_HOME absolute
+QTZ_HOME=`cd "$QTZ_HOME"; pwd`
+
+while [ "`basename "$QTZ_HOME"`" != "bin" ]; do
+  QTZ_HOME=`dirname "$QTZ_HOME"`
+done
+QTZ_HOME=`dirname "$QTZ_HOME"`
+
+# now set the classpath
+QTZ_CLASSPATH="$QTZ_HOME/lib/*:$QTZ_HOME/conf"
+
+# now set the path to java
+if [ -x "$JAVA_HOME/bin/java" ]; then
+  JAVA="$JAVA_HOME/bin/java"
+else
+  set +e
+  JAVA=`which java`
+  set -e
+fi
+
+if [ ! -x "$JAVA" ]; then
+  echo "could not find java; set JAVA_HOME or ensure java is in PATH"
+  exit 1
+fi
+
+# do not let JAVA_TOOL_OPTIONS slip in (as the JVM does by default)
+if [ ! -z "$JAVA_TOOL_OPTIONS" ]; then
+  echo "warning: ignoring JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS"
+  unset JAVA_TOOL_OPTIONS
+fi
+
+# JAVA_OPTS is not a built-in JVM mechanism but some people think it is so we
+# warn them that we are not observing the value of $JAVA_OPTS
+if [ ! -z "$JAVA_OPTS" ]; then
+  echo -n "warning: ignoring JAVA_OPTS=$JAVA_OPTS; "
+  echo "pass JVM parameters via QTZ_JAVA_OPTS"
+fi
+
+# check the Java version
+"$JAVA" -cp "$QTZ_CLASSPATH" org.elasticsearch.tools.java_version_checker.JavaVersionChecker
+
+export HOSTNAME=$HOSTNAME
+
+if [ -z "$QTZ_PATH_CONF" ]; then QTZ_PATH_CONF="$QTZ_HOME"/conf; fi
+
+if [ -z "$QTZ_PATH_CONF" ]; then
+  echo "QTZ_PATH_CONF must be set to the configuration path"
+  exit 1
+fi
+
+# now make QTZ_PATH_CONF absolute
+QTZ_PATH_CONF=`cd "$QTZ_PATH_CONF"; pwd`
